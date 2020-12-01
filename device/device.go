@@ -347,22 +347,14 @@ func (device *Device) RemoveAllPeers() {
 }
 
 func (device *Device) FlushPacketQueues() {
-	for {
-		select {
-		case elem, ok := <-device.queue.decryption:
-			if ok {
-				elem.Drop()
-			}
-		case elem, ok := <-device.queue.encryption:
-			if ok {
-				elem.Drop()
-			}
-		case <-device.queue.handshake:
-		default:
-			return
-		}
+	for elem := range device.queue.decryption {
+		elem.Drop()
 	}
-
+	for elem := range device.queue.encryption {
+		elem.Drop()
+	}
+	for range device.queue.handshake {
+	}
 }
 
 func (device *Device) Close() {
@@ -383,6 +375,9 @@ func (device *Device) Close() {
 	device.isUp.Set(false)
 
 	close(device.signals.stop)
+	close(device.queue.handshake)
+	close(device.queue.decryption)
+	close(device.queue.encryption)
 	device.state.stopping.Wait()
 
 	device.RemoveAllPeers()

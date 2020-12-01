@@ -237,56 +237,46 @@ func (device *Device) RoutineDecryption() {
 	logDebug.Println("Routine: decryption worker - started")
 	device.state.starting.Done()
 
-	for {
-		select {
-		case <-device.signals.stop:
-			return
+	for elem := range device.queue.decryption {
 
-		case elem, ok := <-device.queue.decryption:
+		// check if dropped
 
-			if !ok {
-				return
-			}
-
-			// check if dropped
-
-			if elem.IsDropped() {
-				continue
-			}
-
-			// split message into fields
-
-			counter := elem.packet[MessageTransportOffsetCounter:MessageTransportOffsetContent]
-			content := elem.packet[MessageTransportOffsetContent:]
-
-			// expand nonce
-
-			nonce[0x4] = counter[0x0]
-			nonce[0x5] = counter[0x1]
-			nonce[0x6] = counter[0x2]
-			nonce[0x7] = counter[0x3]
-
-			nonce[0x8] = counter[0x4]
-			nonce[0x9] = counter[0x5]
-			nonce[0xa] = counter[0x6]
-			nonce[0xb] = counter[0x7]
-
-			// decrypt and release to consumer
-
-			var err error
-			elem.counter = binary.LittleEndian.Uint64(counter)
-			elem.packet, err = elem.keypair.receive.Open(
-				content[:0],
-				nonce[:],
-				content,
-				nil,
-			)
-			if err != nil {
-				elem.Drop()
-				device.PutMessageBuffer(elem.buffer)
-			}
-			elem.Unlock()
+		if elem.IsDropped() {
+			continue
 		}
+
+		// split message into fields
+
+		counter := elem.packet[MessageTransportOffsetCounter:MessageTransportOffsetContent]
+		content := elem.packet[MessageTransportOffsetContent:]
+
+		// expand nonce
+
+		nonce[0x4] = counter[0x0]
+		nonce[0x5] = counter[0x1]
+		nonce[0x6] = counter[0x2]
+		nonce[0x7] = counter[0x3]
+
+		nonce[0x8] = counter[0x4]
+		nonce[0x9] = counter[0x5]
+		nonce[0xa] = counter[0x6]
+		nonce[0xb] = counter[0x7]
+
+		// decrypt and release to consumer
+
+		var err error
+		elem.counter = binary.LittleEndian.Uint64(counter)
+		elem.packet, err = elem.keypair.receive.Open(
+			content[:0],
+			nonce[:],
+			content,
+			nil,
+		)
+		if err != nil {
+			elem.Drop()
+			device.PutMessageBuffer(elem.buffer)
+		}
+		elem.Unlock()
 	}
 }
 
@@ -318,12 +308,7 @@ func (device *Device) RoutineHandshake() {
 			elem.buffer = nil
 		}
 
-		select {
-		case elem, ok = <-device.queue.handshake:
-		case <-device.signals.stop:
-			return
-		}
-
+		elem, ok = <-device.queue.handshake
 		if !ok {
 			return
 		}

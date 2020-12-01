@@ -479,19 +479,6 @@ func (device *Device) RoutineEncryption() {
 	logDebug := device.log.Debug
 
 	defer func() {
-		for {
-			select {
-			case elem, ok := <-device.queue.encryption:
-				if ok && !elem.IsDropped() {
-					elem.Drop()
-					device.PutMessageBuffer(elem.buffer)
-					elem.Unlock()
-				}
-			default:
-				goto out
-			}
-		}
-	out:
 		logDebug.Println("Routine: encryption worker - stopped")
 		device.state.stopping.Done()
 	}()
@@ -499,56 +486,42 @@ func (device *Device) RoutineEncryption() {
 	logDebug.Println("Routine: encryption worker - started")
 	device.state.starting.Done()
 
-	for {
+	for elem := range device.queue.encryption {
+		// check if dropped
 
-		// fetch next element
-
-		select {
-		case <-device.signals.stop:
-			return
-
-		case elem, ok := <-device.queue.encryption:
-
-			if !ok {
-				return
-			}
-
-			// check if dropped
-
-			if elem.IsDropped() {
-				continue
-			}
-
-			// populate header fields
-
-			header := elem.buffer[:MessageTransportHeaderSize]
-
-			fieldType := header[0:4]
-			fieldReceiver := header[4:8]
-			fieldNonce := header[8:16]
-
-			binary.LittleEndian.PutUint32(fieldType, MessageTransportType)
-			binary.LittleEndian.PutUint32(fieldReceiver, elem.keypair.remoteIndex)
-			binary.LittleEndian.PutUint64(fieldNonce, elem.nonce)
-
-			// pad content to multiple of 16
-
-			paddingSize := calculatePaddingSize(len(elem.packet), int(atomic.LoadInt32(&device.tun.mtu)))
-			for i := 0; i < paddingSize; i++ {
-				elem.packet = append(elem.packet, 0)
-			}
-
-			// encrypt content and release to consumer
-
-			binary.LittleEndian.PutUint64(nonce[4:], elem.nonce)
-			elem.packet = elem.keypair.send.Seal(
-				header,
-				nonce[:],
-				elem.packet,
-				nil,
-			)
-			elem.Unlock()
+		if elem.IsDropped() {
+			continue
 		}
+
+		// populate header fields
+
+		header := elem.buffer[:MessageTransportHeaderSize]
+
+		fieldType := header[0:4]
+		fieldReceiver := header[4:8]
+		fieldNonce := header[8:16]
+
+		binary.LittleEndian.PutUint32(fieldType, MessageTransportType)
+		binary.LittleEndian.PutUint32(fieldReceiver, elem.keypair.remoteIndex)
+		binary.LittleEndian.PutUint64(fieldNonce, elem.nonce)
+
+		// pad content to multiple of 16
+
+		paddingSize := calculatePaddingSize(len(elem.packet), int(atomic.LoadInt32(&device.tun.mtu)))
+		for i := 0; i < paddingSize; i++ {
+			elem.packet = append(elem.packet, 0)
+		}
+
+		// encrypt content and release to consumer
+
+		binary.LittleEndian.PutUint64(nonce[4:], elem.nonce)
+		elem.packet = elem.keypair.send.Seal(
+			header,
+			nonce[:],
+			elem.packet,
+			nil,
+		)
+		elem.Unlock()
 	}
 }
 
