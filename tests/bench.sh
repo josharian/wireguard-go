@@ -151,10 +151,10 @@ n1 iperf3 -i 0 -Z -n 500M -c 192.168.241.2
 # waitiperf $netns1
 # n2 iperf3 -Z -n 500M -c fd00::1
 
-pretty "*" "UDP over IPv4"
-n1 iperf3 -i 0 -s -1 -B 192.168.241.1 &
-waitiperf $netns1
-n2 iperf3 -i 0 -Z -n 1G -b 0 -u -c 192.168.241.1
+# pretty "*" "UDP over IPv4"
+# n1 iperf3 -i 0 -s -1 -B 192.168.241.1 &
+# waitiperf $netns1
+# n2 iperf3 -i 0 -Z -n 1G -b 0 -u -c 192.168.241.1
 
 # pretty "*" "UDP over IPv6"
 # n2 iperf3 -s -1 -B fd00::2 &
