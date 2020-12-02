@@ -38,8 +38,7 @@ netns2="wg-test-$$-2"
 program="$1"
 export LOG_LEVEL="info"
 
-# pretty() { echo -e "\x1b[32m\x1b[1m[+] ${1:+NS$1: }${2}\x1b[0m" >&3; }
-pretty() { ; }
+pretty() { echo "${1:+NS$1: }${2}" >&3; }
 pp() { pretty "" "$*"; "$@"; }
 maybe_exec() { if [[ $BASHPID -eq $$ ]]; then "$@"; else exec "$@"; fi; }
 n0() { pretty 0 "$*"; maybe_exec ip netns exec $netns0 "$@"; }
@@ -133,12 +132,12 @@ n0 wg set wg2 peer "$pub1" endpoint 127.0.0.1:10000
 # Sanity checks
 
 echo Ping over IPv4
-n2 ping -c 10 -f -W 1 192.168.241.1
-n1 ping -c 10 -f -W 1 192.168.241.2
+n2 ping -q -c 10 -f -W 1 192.168.241.1
+n1 ping -q -c 10 -f -W 1 192.168.241.2
 
 echo Ping over IPv6
-n2 ping6 -c 10 -f -W 1 fd00::1
-n1 ping6 -c 10 -f -W 1 fd00::2
+n2 ping6 -q -c 10 -f -W 1 fd00::1
+n1 ping6 -q -c 10 -f -W 1 fd00::2
 
 # Benchmark
 
