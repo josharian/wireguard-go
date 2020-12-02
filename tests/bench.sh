@@ -142,9 +142,9 @@ n1 ping6 -c 10 -f -W 1 fd00::2
 # Benchmark
 
 pretty "*" "TCP over IPv4"
-n2 iperf3 -s -1 -B 192.168.241.2 &
+n2 iperf3 -i 0 -s -1 -B 192.168.241.2 &
 waitiperf $netns2
-n1 iperf3 -Z -n 500M -c 192.168.241.2
+n1 iperf3 -i 0 -Z -n 500M -c 192.168.241.2
 
 # pretty "*" "TCP over IPv6"
 # n1 iperf3 -s -1 -B fd00::1 &
@@ -152,9 +152,9 @@ n1 iperf3 -Z -n 500M -c 192.168.241.2
 # n2 iperf3 -Z -n 500M -c fd00::1
 
 pretty "*" "UDP over IPv4"
-n1 iperf3 -s -1 -B 192.168.241.1 &
+n1 iperf3 -i 0 -s -1 -B 192.168.241.1 &
 waitiperf $netns1
-n2 iperf3 -Z -n 1G -b 0 -u -c 192.168.241.1
+n2 iperf3 -i 0 -Z -n 1G -b 0 -u -c 192.168.241.1
 
 # pretty "*" "UDP over IPv6"
 # n2 iperf3 -s -1 -B fd00::2 &
