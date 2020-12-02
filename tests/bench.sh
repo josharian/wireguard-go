@@ -36,6 +36,7 @@ netns0="wg-test-$$-0"
 netns1="wg-test-$$-1"
 netns2="wg-test-$$-2"
 program="$1"
+benchlog="$2"
 export LOG_LEVEL="info"
 
 pretty() { echo "${1:+NS$1: }${2}" >&3; }
@@ -142,9 +143,12 @@ n1 ping6 -q -c 10 -f -W 1 fd00::2
 # Benchmark
 
 pretty "*" "TCP over IPv4"
-n2 iperf3 -i 0 -s -1 -B 192.168.241.2 &
-waitiperf $netns2
-n1 iperf3 -i 0 -Z -n 500M -c 192.168.241.2
+for iter in $(seq 5)
+do
+    n2 iperf3 -i 0 -s -1 -B 192.168.241.2 &
+    waitiperf $netns2
+    n1 iperf3 -i 0 -Z -n 500M -c 192.168.241.2 | grep sender | awk '{print "BenchmarkTCPv4 1 "$7" Mbits/sec"}' | tee -a "$benchlog"
+done
 
 # pretty "*" "TCP over IPv6"
 # n1 iperf3 -s -1 -B fd00::1 &
