@@ -38,7 +38,8 @@ netns2="wg-test-$$-2"
 program="$1"
 export LOG_LEVEL="info"
 
-pretty() { echo -e "\x1b[32m\x1b[1m[+] ${1:+NS$1: }${2}\x1b[0m" >&3; }
+# pretty() { echo -e "\x1b[32m\x1b[1m[+] ${1:+NS$1: }${2}\x1b[0m" >&3; }
+pretty() { ; }
 pp() { pretty "" "$*"; "$@"; }
 maybe_exec() { if [[ $BASHPID -eq $$ ]]; then "$@"; else exec "$@"; fi; }
 n0() { pretty 0 "$*"; maybe_exec ip netns exec $netns0 "$@"; }
