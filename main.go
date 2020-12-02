@@ -37,7 +37,7 @@ func printUsage() {
 }
 
 func warning() {
-	if runtime.GOOS != "linux" || os.Getenv(ENV_WG_PROCESS_FOREGROUND) == "1" {
+	if runtime.GOOS != "linux" || os.Getenv(ENV_WG_PROCESS_FOREGROUND) == "1" || true {
 		return
 	}
 
