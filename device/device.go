@@ -346,17 +346,6 @@ func (device *Device) RemoveAllPeers() {
 	device.peers.keyMap = make(map[NoisePublicKey]*Peer)
 }
 
-func (device *Device) FlushPacketQueues() {
-	for elem := range device.queue.decryption {
-		elem.Drop()
-	}
-	for elem := range device.queue.encryption {
-		elem.Drop()
-	}
-	for range device.queue.handshake {
-	}
-}
-
 func (device *Device) Close() {
 	if device.isClosed.Swap(true) {
 		return
@@ -381,8 +370,6 @@ func (device *Device) Close() {
 	device.state.stopping.Wait()
 
 	device.RemoveAllPeers()
-
-	device.FlushPacketQueues()
 
 	device.rate.limiter.Close()
 
