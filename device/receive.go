@@ -497,13 +497,43 @@ func (peer *Peer) RoutineSequentialReceiver() {
 
 	peer.routines.starting.Done()
 
+	const offset = MessageTransportOffsetContent
+
+	sendPacket := func(elem *QueueInboundElement) {
+		buf := elem.buffer[:offset+len(elem.packet)]
+		_, err := device.tun.device.Write(buf, offset)
+		if len(peer.queue.inbound) == 0 {
+			err = device.tun.device.Flush()
+			if err != nil {
+				peer.device.log.Error.Printf("Unable to flush packets: %v", err)
+			}
+		}
+		if err != nil && !device.isClosed.Get() {
+			logError.Println("Failed to write packet to TUN device:", err)
+		}
+		if !elem.IsDropped() {
+			device.PutMessageBuffer(elem.buffer)
+		}
+		device.PutInboundElement(elem)
+	}
+
+	sendc := make(chan *QueueInboundElement, 64)
+	for i := 0; i < 1; i++ {
+		go func() {
+			for elem := range sendc {
+				sendPacket(elem)
+			}
+		}()
+	}
+	defer close(sendc)
+
 	for {
 		if elem != nil {
+			// TODO: dedup
 			if !elem.IsDropped() {
 				device.PutMessageBuffer(elem.buffer)
 			}
 			device.PutInboundElement(elem)
-			elem = nil
 		}
 
 		var elemOk bool
@@ -619,17 +649,7 @@ func (peer *Peer) RoutineSequentialReceiver() {
 		}
 
 		// write to tun device
-
-		offset := MessageTransportOffsetContent
-		_, err := device.tun.device.Write(elem.buffer[:offset+len(elem.packet)], offset)
-		if len(peer.queue.inbound) == 0 {
-			err = device.tun.device.Flush()
-			if err != nil {
-				peer.device.log.Error.Printf("Unable to flush packets: %v", err)
-			}
-		}
-		if err != nil && !device.isClosed.Get() {
-			logError.Println("Failed to write packet to TUN device:", err)
-		}
+		sendc <- elem
+		elem = nil
 	}
 }
