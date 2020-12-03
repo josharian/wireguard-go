@@ -254,35 +254,47 @@ func (device *Device) RoutineReadFromTUN() {
 	logDebug.Println("Routine: TUN reader - started")
 	device.state.starting.Done()
 
-	var elem *QueueOutboundElement
+	const offset = MessageTransportHeaderSize
 
+	recvc := make(chan *QueueOutboundElement, 256)
+
+	go func() {
+		for {
+			elem := device.NewOutboundElement()
+			// read packet
+			size, err := device.tun.device.Read(elem.buffer[:], offset)
+			if err != nil {
+				if !device.isClosed.Get() {
+					logError.Println("Failed to read packet from TUN device:", err)
+					device.Close()
+				}
+				device.PutMessageBuffer(elem.buffer)
+				device.PutOutboundElement(elem)
+				close(recvc)
+				return
+			}
+			if size == 0 || size > MaxContentSize {
+				continue
+			}
+			elem.packet = elem.buffer[offset : offset+size]
+			select {
+			case recvc <- elem:
+			}
+		}
+	}()
+
+	var elem *QueueOutboundElement
 	for {
 		if elem != nil {
 			device.PutMessageBuffer(elem.buffer)
 			device.PutOutboundElement(elem)
 		}
-		elem = device.NewOutboundElement()
 
-		// read packet
-
-		offset := MessageTransportHeaderSize
-		size, err := device.tun.device.Read(elem.buffer[:], offset)
-
-		if err != nil {
-			if !device.isClosed.Get() {
-				logError.Println("Failed to read packet from TUN device:", err)
-				device.Close()
-			}
-			device.PutMessageBuffer(elem.buffer)
-			device.PutOutboundElement(elem)
+		var ok bool
+		elem, ok = <-recvc
+		if !ok {
 			return
 		}
-
-		if size == 0 || size > MaxContentSize {
-			continue
-		}
-
-		elem.packet = elem.buffer[offset : offset+size]
 
 		// lookup peer
 
