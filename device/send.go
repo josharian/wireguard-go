@@ -277,9 +277,8 @@ func (device *Device) RoutineReadFromTUN() {
 				continue
 			}
 			elem.packet = elem.buffer[offset : offset+size]
-			select {
-			case recvc <- elem:
-			}
+			// TODO: prefer to drop head of line in favor of this one?
+			recvc <- elem
 		}
 	}()
 
