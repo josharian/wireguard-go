@@ -9,9 +9,11 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"runtime"
+	"runtime/pprof"
 	"strconv"
 	"syscall"
 
@@ -222,6 +224,17 @@ func main() {
 		process.Release()
 		return
 	}
+
+	fn := "cpu.pprof"
+	f, err := os.Create(fn)
+	if err != nil {
+		log.Fatalf("profile: could not create cpu profile %q: %v", fn, err)
+	}
+	pprof.StartCPUProfile(f)
+	defer func() {
+		pprof.StopCPUProfile()
+		f.Close()
+	}()
 
 	device := device.NewDevice(tun, logger)
 
