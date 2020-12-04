@@ -568,13 +568,6 @@ func (peer *Peer) RoutineSequentialSender(outboundQueue <-chan *QueueOutboundEle
 	logError := device.log.Error
 
 	defer func() {
-		for elem := range outboundQueue {
-			if !elem.IsDropped() {
-				device.PutMessageBuffer(elem.buffer)
-				elem.Drop()
-			}
-			device.PutOutboundElement(elem)
-		}
 		logDebug.Println(peer, "- Routine: sequential sender - stopped")
 		peer.routines.stopping.Done()
 	}()
@@ -583,41 +576,35 @@ func (peer *Peer) RoutineSequentialSender(outboundQueue <-chan *QueueOutboundEle
 
 	peer.routines.starting.Done()
 
-	for {
-		select {
-
-		case <-peer.routines.stop:
-			return
-
-		case elem, ok := <-outboundQueue:
-
-			if !ok {
-				return
-			}
-
-			elem.Lock()
-			if elem.IsDropped() {
-				device.PutOutboundElement(elem)
-				continue
-			}
-
-			peer.timersAnyAuthenticatedPacketTraversal()
-			peer.timersAnyAuthenticatedPacketSent()
-
-			// send message and return buffer to pool
-
-			err := peer.SendBuffer(elem.packet)
-			if len(elem.packet) != MessageKeepaliveSize {
-				peer.timersDataSent()
-			}
+	for elem := range outboundQueue {
+		elem.Lock()
+		if elem.IsDropped() {
+			device.PutOutboundElement(elem)
+			continue
+		}
+		if !peer.isRunning.Get() {
+			// peer has been stopped; return re-usable elements to the shared pool.
 			device.PutMessageBuffer(elem.buffer)
 			device.PutOutboundElement(elem)
-			if err != nil {
-				logError.Println(peer, "- Failed to send data packet", err)
-				continue
-			}
-
-			peer.keepKeyFreshSending()
+			continue
 		}
+
+		peer.timersAnyAuthenticatedPacketTraversal()
+		peer.timersAnyAuthenticatedPacketSent()
+
+		// send message and return buffer to pool
+
+		err := peer.SendBuffer(elem.packet)
+		if len(elem.packet) != MessageKeepaliveSize {
+			peer.timersDataSent()
+		}
+		device.PutMessageBuffer(elem.buffer)
+		device.PutOutboundElement(elem)
+		if err != nil {
+			logError.Println(peer, "- Failed to send data packet", err)
+			continue
+		}
+
+		peer.keepKeyFreshSending()
 	}
 }
