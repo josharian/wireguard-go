@@ -60,7 +60,6 @@ type Peer struct {
 	queue struct {
 		sync.RWMutex
 		nonce                           chan *QueueOutboundElement // nonce / pre-handshake queue
-		outbound                        chan *QueueOutboundElement // sequential ordering of work
 		inbound                         chan *QueueInboundElement  // sequential ordering of work
 		packetInNonceQueueIsAwaitingKey AtomicBool
 	}
@@ -198,7 +197,6 @@ func (peer *Peer) Start() {
 	// prepare queues
 	peer.queue.Lock()
 	peer.queue.nonce = make(chan *QueueOutboundElement, QueueOutboundSize)
-	peer.queue.outbound = make(chan *QueueOutboundElement, QueueOutboundSize)
 	peer.queue.inbound = make(chan *QueueInboundElement, QueueInboundSize)
 	peer.queue.Unlock()
 
@@ -209,8 +207,9 @@ func (peer *Peer) Start() {
 
 	// wait for routines to start
 
-	go peer.RoutineNonce()
-	go peer.RoutineSequentialSender()
+	outboundQueue := make(chan *QueueOutboundElement, QueueOutboundSize)
+	go peer.RoutineNonce(outboundQueue)
+	go peer.RoutineSequentialSender(outboundQueue)
 	go peer.RoutineSequentialReceiver()
 
 	peer.routines.starting.Wait()
@@ -288,7 +287,6 @@ func (peer *Peer) Stop() {
 
 	peer.queue.Lock()
 	close(peer.queue.nonce)
-	close(peer.queue.outbound)
 	close(peer.queue.inbound)
 	peer.queue.Unlock()
 

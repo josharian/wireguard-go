@@ -87,7 +87,7 @@ func addToNonceQueue(queue chan *QueueOutboundElement, element *QueueOutboundEle
 	}
 }
 
-func addToOutboundAndEncryptionQueues(outboundQueue chan *QueueOutboundElement, encryptionQueue chan *QueueOutboundElement, element *QueueOutboundElement) {
+func addToOutboundAndEncryptionQueues(outboundQueue chan<- *QueueOutboundElement, encryptionQueue chan *QueueOutboundElement, element *QueueOutboundElement) {
 	select {
 	case outboundQueue <- element:
 		select {
@@ -331,13 +331,15 @@ func (peer *Peer) FlushNonceQueue() {
 	}
 }
 
-/* Queues packets when there is no handshake.
- * Then assigns nonces to packets sequentially
- * and creates "work" structs for workers
+/* RoutineNonce queues packets when there is no handshake.
+ * It then assigns nonces to packets sequentially,
+ * creates "work" structs for workers,
+ * and adds them to outboundQueue.
+ * It closes outboundQueue on exit.
  *
  * Obs. A single instance per peer
  */
-func (peer *Peer) RoutineNonce() {
+func (peer *Peer) RoutineNonce(outboundQueue chan<- *QueueOutboundElement) {
 	var keypair *Keypair
 
 	device := peer.device
@@ -356,6 +358,7 @@ func (peer *Peer) RoutineNonce() {
 	}
 
 	defer func() {
+		close(outboundQueue)
 		flush()
 		logDebug.Println(peer, "- Routine: nonce worker - stopped")
 		peer.queue.packetInNonceQueueIsAwaitingKey.Set(false)
@@ -447,7 +450,7 @@ NextPacket:
 			elem.Lock()
 
 			// add to parallel and sequential queue
-			addToOutboundAndEncryptionQueues(peer.queue.outbound, device.queue.encryption, elem)
+			addToOutboundAndEncryptionQueues(outboundQueue, device.queue.encryption, elem)
 		}
 	}
 }
@@ -552,12 +555,12 @@ func (device *Device) RoutineEncryption() {
 	}
 }
 
-/* Sequentially reads packets from queue and sends to endpoint
+/* RoutineSequentialSender sequentially reads packets from outboundQueue and sends to endpoint.
  *
  * Obs. Single instance per peer.
- * The routine terminates then the outbound queue is closed.
+ * The routine terminates when outboundQueue is closed.
  */
-func (peer *Peer) RoutineSequentialSender() {
+func (peer *Peer) RoutineSequentialSender(outboundQueue <-chan *QueueOutboundElement) {
 
 	device := peer.device
 
@@ -565,21 +568,13 @@ func (peer *Peer) RoutineSequentialSender() {
 	logError := device.log.Error
 
 	defer func() {
-		for {
-			select {
-			case elem, ok := <-peer.queue.outbound:
-				if ok {
-					if !elem.IsDropped() {
-						device.PutMessageBuffer(elem.buffer)
-						elem.Drop()
-					}
-					device.PutOutboundElement(elem)
-				}
-			default:
-				goto out
+		for elem := range outboundQueue {
+			if !elem.IsDropped() {
+				device.PutMessageBuffer(elem.buffer)
+				elem.Drop()
 			}
+			device.PutOutboundElement(elem)
 		}
-	out:
 		logDebug.Println(peer, "- Routine: sequential sender - stopped")
 		peer.routines.stopping.Done()
 	}()
@@ -594,7 +589,7 @@ func (peer *Peer) RoutineSequentialSender() {
 		case <-peer.routines.stop:
 			return
 
-		case elem, ok := <-peer.queue.outbound:
+		case elem, ok := <-outboundQueue:
 
 			if !ok {
 				return
