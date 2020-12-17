@@ -173,10 +173,12 @@ func (peer *Peer) String() string {
 }
 
 func (peer *Peer) Start() {
-
-	// should never start a peer on a closed device
-
-	if peer.device.isClosed.Get() {
+	device := peer.device
+	// Do not start a peer concurrently with closing its device.
+	device.state.Lock()
+	defer device.state.Unlock()
+	// Do not start a peer on a closed device.
+	if device.isClosed.Get() {
 		return
 	}
 
@@ -189,7 +191,6 @@ func (peer *Peer) Start() {
 		return
 	}
 
-	device := peer.device
 	device.log.Debug.Println(peer, "- Starting...")
 
 	// reset routine state

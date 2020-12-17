@@ -382,14 +382,14 @@ func (device *Device) FlushPacketQueues() {
 }
 
 func (device *Device) Close() {
+	device.state.Lock()
+	defer device.state.Unlock()
 	if device.isClosed.Swap(true) {
 		return
 	}
 
 	device.log.Info.Println("Device closing")
 	device.state.changing.Set(true)
-	device.state.Lock()
-	defer device.state.Unlock()
 
 	device.tun.device.Close()
 	device.BindClose()
