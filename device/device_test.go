@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -219,7 +220,7 @@ func TestConcurrencySafety(t *testing.T) {
 		cfg.Seek(0, io.SeekStart)
 		err := pair[0].dev.IpcSetOperation(cfg)
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
 		}
 	}
 
@@ -248,6 +249,36 @@ func TestConcurrencySafety(t *testing.T) {
 		for i := 0; i < iters; i++ {
 			applyCfg(bad)
 			applyCfg(good)
+		}
+	})
+
+	buf := new(bytes.Buffer)
+	err := pair[0].dev.IpcGetOperation(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := buf.String()
+	i := strings.Index(s, "listen_port=")
+	s = s[i+len("listen_port="):]
+	i = strings.Index(s, "\n")
+	s = s[:i]
+	// t.Error(s)
+	port2 := s
+
+	// Remove peer concurrently with tunnel use.
+	t.Run("remove", func(t *testing.T) {
+		for i := 0; i < 100; i++ {
+			applyCfg(uapiCfg(
+				"public_key", "f70dbb6b1b92a1dde1c783b297016af3f572fef13b0abb16a2623d89a58e9725",
+				"remove", "true",
+			))
+			applyCfg(uapiCfg(
+				"public_key", "f70dbb6b1b92a1dde1c783b297016af3f572fef13b0abb16a2623d89a58e9725",
+				"protocol_version", "1",
+				"replace_allowed_ips", "true",
+				"allowed_ip", "1.0.0.2/32",
+				"endpoint", "127.0.0.1:"+port2,
+			))
 		}
 	})
 
