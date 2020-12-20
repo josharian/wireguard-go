@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -59,7 +60,6 @@ type Peer struct {
 	}
 
 	queue struct {
-		sync.RWMutex
 		nonce                           chan *QueueOutboundElement // nonce / pre-handshake queue
 		outbound                        chan *QueueOutboundElement // sequential ordering of work
 		inbound                         chan *QueueInboundElement  // sequential ordering of work
@@ -73,6 +73,58 @@ type Peer struct {
 	}
 
 	cookieGenerator CookieGenerator
+}
+
+type autodrainingOutboundQueue struct {
+	c chan *QueueOutboundElement
+}
+
+func newAutodrainingOutboundQueue(device *Device) chan *QueueOutboundElement {
+	q := &autodrainingOutboundQueue{
+		c: make(chan *QueueOutboundElement, QueueOutboundSize),
+	}
+	runtime.SetFinalizer(q, func(q *autodrainingOutboundQueue) {
+		for {
+			select {
+			case elem := <-q.c:
+				if elem == nil {
+					continue
+				}
+				device.PutMessageBuffer(elem.buffer)
+				device.PutOutboundElement(elem)
+			default:
+				return
+			}
+		}
+	})
+	return q.c
+}
+
+type autodrainingInboundQueue struct {
+	c chan *QueueInboundElement
+}
+
+func newAutodrainingInboundQueue(device *Device) chan *QueueInboundElement {
+	q := &autodrainingInboundQueue{
+		c: make(chan *QueueInboundElement, QueueInboundSize),
+	}
+	runtime.SetFinalizer(q, func(q *autodrainingInboundQueue) {
+		for {
+			select {
+			case elem := <-q.c:
+				if elem == nil {
+					continue
+				}
+				if !elem.IsDropped() {
+					device.PutMessageBuffer(elem.buffer)
+				}
+				device.PutInboundElement(elem)
+			default:
+				return
+			}
+		}
+	})
+	return q.c
 }
 
 func (device *Device) NewPeer(pk NoisePublicKey) (*Peer, error) {
@@ -200,11 +252,9 @@ func (peer *Peer) Start() {
 	peer.routines.stopping.Add(PeerRoutineNumber)
 
 	// prepare queues
-	peer.queue.Lock()
-	peer.queue.nonce = make(chan *QueueOutboundElement, QueueOutboundSize)
+	peer.queue.nonce = newAutodrainingOutboundQueue(device)
 	peer.queue.outbound = make(chan *QueueOutboundElement, QueueOutboundSize)
-	peer.queue.inbound = make(chan *QueueInboundElement, QueueInboundSize)
-	peer.queue.Unlock()
+	peer.queue.inbound = newAutodrainingInboundQueue(device)
 
 	peer.timersInit()
 	peer.handshake.lastSentHandshake = time.Now().Add(-(RekeyTimeout + time.Second))
@@ -284,16 +334,11 @@ func (peer *Peer) Stop() {
 	peer.timersStop()
 
 	// stop & wait for ongoing peer routines
-
+	// notify goroutines that no more data is coming
 	close(peer.routines.stop)
+	peer.queue.nonce <- nil
+	peer.queue.inbound <- nil
 	peer.routines.stopping.Wait()
-
-	// close queues
-
-	peer.queue.Lock()
-	close(peer.queue.nonce)
-	close(peer.queue.inbound)
-	peer.queue.Unlock()
 
 	peer.ZeroAndFlushAll()
 }

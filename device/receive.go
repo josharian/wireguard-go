@@ -194,7 +194,6 @@ func (device *Device) RoutineReceiveIncoming(IP int, bind conn.Bind) {
 
 			// add to decryption queues
 
-			peer.queue.RLock()
 			if peer.isRunning.Get() {
 				if device.addToInboundAndDecryptionQueues(peer.queue.inbound, device.queue.decryption, elem) {
 					buffer = device.GetMessageBuffer()
@@ -202,8 +201,6 @@ func (device *Device) RoutineReceiveIncoming(IP int, bind conn.Bind) {
 			} else {
 				device.PutInboundElement(elem)
 			}
-			peer.queue.RUnlock()
-
 			continue
 
 		// otherwise it is a fixed size & handshake related packet
@@ -500,12 +497,6 @@ func (peer *Peer) RoutineSequentialReceiver() {
 	defer func() {
 		logDebug.Println(peer, "- Routine: sequential receiver - stopped")
 		peer.routines.stopping.Done()
-		if elem != nil {
-			if !elem.IsDropped() {
-				device.PutMessageBuffer(elem.buffer)
-			}
-			device.PutInboundElement(elem)
-		}
 	}()
 
 	logDebug.Println(peer, "- Routine: sequential receiver - started")
@@ -519,14 +510,9 @@ func (peer *Peer) RoutineSequentialReceiver() {
 			elem = nil
 		}
 
-		var elemOk bool
-		select {
-		case <-peer.routines.stop:
+		elem = <-peer.queue.inbound
+		if elem == nil {
 			return
-		case elem, elemOk = <-peer.queue.inbound:
-			if !elemOk {
-				return
-			}
 		}
 
 		// wait for decryption

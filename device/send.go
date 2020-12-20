@@ -117,8 +117,6 @@ func addToOutboundAndEncryptionQueues(outboundQueue chan *QueueOutboundElement, 
 /* Queues a keepalive if no packets are queued for peer
  */
 func (peer *Peer) SendKeepalive() bool {
-	peer.queue.RLock()
-	defer peer.queue.RUnlock()
 	if len(peer.queue.nonce) != 0 || peer.queue.packetInNonceQueueIsAwaitingKey.Get() || !peer.isRunning.Get() {
 		return false
 	}
@@ -321,7 +319,6 @@ func (device *Device) RoutineReadFromTUN() {
 
 		// insert into nonce/pre-handshake queue
 
-		peer.queue.RLock()
 		if peer.isRunning.Get() {
 			if peer.queue.packetInNonceQueueIsAwaitingKey.Get() {
 				peer.SendHandshakeInitiation(false)
@@ -329,7 +326,6 @@ func (device *Device) RoutineReadFromTUN() {
 			addToNonceQueue(peer.queue.nonce, elem, device)
 			elem = nil
 		}
-		peer.queue.RUnlock()
 	}
 }
 
@@ -356,8 +352,15 @@ func (peer *Peer) RoutineNonce() {
 		for {
 			select {
 			case elem := <-peer.queue.nonce:
-				device.PutMessageBuffer(elem.buffer)
-				device.PutOutboundElement(elem)
+				if elem != nil {
+					device.PutMessageBuffer(elem.buffer)
+					device.PutOutboundElement(elem)
+				} else {
+					// this nil was meant for someone else, to signal shutdown;
+					// put  it  back.
+					peer.queue.nonce <- nil
+					return
+				}
 			default:
 				return
 			}
@@ -380,16 +383,12 @@ NextPacket:
 		peer.queue.packetInNonceQueueIsAwaitingKey.Set(false)
 
 		select {
-		case <-peer.routines.stop:
-			return
-
 		case <-peer.signals.flushNonceQueue:
 			flush()
 			continue NextPacket
 
-		case elem, ok := <-peer.queue.nonce:
-
-			if !ok {
+		case elem := <-peer.queue.nonce:
+			if elem == nil {
 				return
 			}
 

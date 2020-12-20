@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -168,7 +169,26 @@ NextAttempt:
 				continue NextAttempt
 			}
 			// The device is up. Close it when the test completes.
-			t.Cleanup(p.dev.Close)
+			t.Cleanup(func() {
+				p.dev.Close()
+				runtime.GC()
+				runtime.GC()
+				if PreallocatedBuffersPerPool != 0 {
+					t.Logf("draining device %d inbound elems", i)
+					for j := 0; j < PreallocatedBuffersPerPool; j++ {
+						<-p.dev.pool.inboundElementReuseChan
+					}
+					t.Logf("draining device %d outbound elems", i)
+					for j := 0; j < PreallocatedBuffersPerPool; j++ {
+						<-p.dev.pool.outboundElementReuseChan
+					}
+					t.Logf("draining device %d message buffers", i)
+					for j := 0; j < PreallocatedBuffersPerPool; j++ {
+						<-p.dev.pool.messageBufferReuseChan
+					}
+					t.Logf("draining completed")
+				}
+			})
 		}
 		return // success
 	}
