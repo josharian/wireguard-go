@@ -1,4 +1,5 @@
 // +build amd64 arm64
+// +build windows
 
 /* SPDX-License-Identifier: MIT
  *

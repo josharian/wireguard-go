@@ -1,4 +1,5 @@
 // +build 386 arm
+// +build windows
 
 /* SPDX-License-Identifier: MIT
  *

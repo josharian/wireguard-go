@@ -1,3 +1,5 @@
+// +build windows
+
 /* SPDX-License-Identifier: MIT
  *
  * Copyright (C) 2020 WireGuard LLC. All Rights Reserved.
